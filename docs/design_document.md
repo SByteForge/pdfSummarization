@@ -1,11 +1,12 @@
 # PDF Summarizer Design Document
 
 #### 1. **Project Overview**
-The **PDF Summarizer** is an application that reads PDF documents and generates concise summaries using Large Language Models (LLMs). The application is built using **LangChain** for language processing and **Streamlit** for creating a user-friendly web interface. It allows users to upload PDF files, which are processed for text extraction and then summarized using an LLM.
+The **PDF Summarizer** is an application that reads PDF documents and generates concise summaries using a locally-hosted Large Language Model (LLM). The application is built using **LangChain** for the retrieval/summarization pipeline and **Streamlit** for creating a user-friendly web interface. It allows users to upload PDF files, which are processed for text extraction, embedded and retrieved locally, and then summarized using an LLM served through Ollama — no external API calls.
 
 #### 2. **Key Features**
 - **PDF Reading**: Extracts text from PDF files for further processing.
-- **Summarization**: Leverages LLMs, such as OpenAI models, to generate summaries of extracted text.
+- **Local Retrieval**: Chunks text, embeds it locally with `sentence-transformers`, and retrieves relevant chunks via FAISS.
+- **Summarization**: Leverages a self-hosted LLM via Ollama to generate summaries of extracted text — free of paid API dependency.
 - **Interactive UI**: A web-based interface built using Streamlit, allowing users to upload PDFs and view summaries in real-time.
 
 #### 3. **Architecture Design**
@@ -25,9 +26,10 @@ The application follows a modular structure, ensuring that the components for PD
             v
 |-------------------------------|
 |           Backend              |
-|  - PDF Reader (pdfplumber)     |
-|  - Summarization (LangChain)   |
-|  - LLM Integration (OpenAI)    |
+|  - PDF Reader (pypdf)          |
+|  - Retrieval (FAISS + local    |
+|    sentence-transformers)      |
+|  - LLM Integration (Ollama)    |
 |-------------------------------|
             |
             v
@@ -39,22 +41,23 @@ The application follows a modular structure, ensuring that the components for PD
 ```
 
 #### 4. **Technologies Used**
-- **Python 3.8+**: Core language for the project.
+- **Python 3.12+**: Core language for the project.
 - **LangChain**: Framework for building applications with LLMs.
 - **Streamlit**: Library for building interactive web applications.
-- **pdfplumber**: Tool for extracting text from PDF documents.
-- **OpenAI API**: LLM integration for summarization tasks.
+- **pypdf**: Tool for extracting text from PDF documents.
+- **sentence-transformers + FAISS**: Local embedding generation and similarity search.
+- **Ollama** (via `langchain-ollama`): Self-hosted LLM integration for summarization tasks — no paid API dependency.
 
 #### 5. **Detailed Component Design**
 1. **PDF Reader**:
-   - Uses `pdfplumber` to extract text from uploaded PDFs.
+   - Uses `pypdf` to extract text from uploaded PDFs.
    - Handles multi-page PDF documents.
    - Processes the raw text for input into the summarization model.
 
 2. **Summarization Component**:
    - Integrates with LangChain for managing the pipeline of text processing.
-   - The core summarization logic communicates with OpenAI API, sending extracted text and receiving summarized output.
-   - Supports configurable summarization parameters like length, detail level, etc.
+   - The core summarization logic communicates with a local Ollama server, sending retrieved chunks and receiving summarized output.
+   - Supports configurable model selection via `OLLAMA_MODEL`.
 
 3. **Interactive UI**:
    - Built using Streamlit for easy-to-use, real-time interaction.
@@ -64,18 +67,24 @@ The application follows a modular structure, ensuring that the components for PD
 #### 6. **Project Structure**
 - **data/**: Stores raw and processed PDF files.
 - **docs/**: Documentation for the project.
-- **src/**: Source code for the PDF reader, summarization logic, and Streamlit app.
+- **src/**: Source code for the PDF reader, text processing, summarization logic, and Streamlit app.
   - **pdf_reader.py**: Handles PDF text extraction.
-  - **summarizer.py**: Interacts with LangChain and OpenAI API for summarization.
+  - **text_processor.py**: Chunks text and builds a local FAISS knowledge base.
+  - **openai_client.py**: Interacts with LangChain and Ollama for summarization.
+  - **summarizer.py**: Orchestrates the read → embed → summarize pipeline.
   - **streamlit_app.py**: Hosts the Streamlit web app.
-- **tests/**: Contains unit and integration tests.
-- **.env**: Contains environment variables like the OpenAI API key.
+  - **exceptions.py**: Application-specific error types.
+- **test/**: Contains unit tests.
+- **deploy/environments/**: Per-environment (`dev`/`qa`/`prod`) configuration values.
+- **Dockerfile**: Multi-stage, non-root container image.
+- **.github/workflows/**: CI pipeline (lint + test).
+- **.env**: Optional, for overriding `OLLAMA_URL`/`OLLAMA_MODEL`.
 
 #### 7. **Installation & Setup**
 1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/yourusername/pdf-summarizer.git
-   cd pdf-summarizer
+   git clone https://github.com/SByteForge/pdfSummarization.git
+   cd pdfSummarization
    ```
 2. **Set up the Virtual Environment**:
    - Create a virtual environment (optional):
@@ -95,10 +104,15 @@ The application follows a modular structure, ensuring that the components for PD
    ```bash
    pip install -r requirements.txt
    ```
-4. **Set Up Environment Variables**:
-   - Create a `.env` file with your OpenAI API key:
+4. **Install Ollama and pull a model**:
+   ```bash
+   ollama pull llama3.2:1b
+   ```
+5. **Set Up Environment Variables (optional)**:
+   - Create a `.env` file to override the defaults:
      ```
-     OPENAI_API_KEY=your_openai_api_key_here
+     OLLAMA_URL=http://localhost:11434
+     OLLAMA_MODEL=llama3.2:1b
      ```
 
 #### 8. **Usage**

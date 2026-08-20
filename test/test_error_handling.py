@@ -1,5 +1,3 @@
-import io
-
 import pytest
 
 from src.exceptions import PDFExtractionError
