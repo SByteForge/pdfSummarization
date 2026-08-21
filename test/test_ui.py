@@ -1,8 +1,17 @@
 from pathlib import Path
 
+import pytest
 from streamlit.testing.v1 import AppTest
 
+from src.config import Config
+
 APP_PATH = str(Path(__file__).parent.parent / "src" / "streamlit_app.py")
+
+
+@pytest.fixture(autouse=True)
+def _isolated_governance_db(tmp_path, monkeypatch):
+    """Keep the app's governance.init_db() call from writing into the real repo during tests."""
+    monkeypatch.setattr(Config, "GOVERNANCE_DB_PATH", str(tmp_path / "test_governance.db"))
 
 
 def test_app_renders_without_crashing():
