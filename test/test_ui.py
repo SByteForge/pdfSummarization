@@ -16,3 +16,10 @@ def test_app_shows_title_and_file_uploader():
     at.run(timeout=30)
     assert at.title[0].value == "PDF Summarization App"
     assert len(at.file_uploader) == 1
+
+
+def test_app_shows_sidebar_controls():
+    at = AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+    assert len(at.sidebar.selectbox) == 1
+    assert len(at.sidebar.radio) == 1

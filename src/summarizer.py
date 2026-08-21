@@ -1,9 +1,8 @@
 from src.exceptions import PDFSummarizerError
 from src.openai_client import OpenAIClient
 from src.pdf_reader import PDFReader
+from src.prompts import DETAILED as DEFAULT_QUERY
 from src.text_processor import TextProcessor
-
-DEFAULT_QUERY = "Summarize the content of the uploaded PDF file in approximately 3-5 sentences."
 
 
 class Summarizer:
