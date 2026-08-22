@@ -11,3 +11,7 @@ class PDFExtractionError(PDFSummarizerError):
 
 class SummarizationError(PDFSummarizerError):
     """Raised when the summarization backend fails to produce a summary."""
+
+
+class StorageError(PDFSummarizerError):
+    """Raised when the uploaded PDF cannot be durably stored."""

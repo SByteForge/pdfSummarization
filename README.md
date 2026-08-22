@@ -2,15 +2,17 @@
 
 ## Overview
 
-The **PDF Summarizer** project is an application designed to read PDF files and generate concise summaries using a locally-hosted Large Language Model (LLM). Text is chunked and embedded locally, retrieved via FAISS, and summarized by an LLM served through [Ollama](https://ollama.com) — no external API keys or paid services required. The project uses LangChain for the retrieval/summarization pipeline and Streamlit for the interactive user interface.
+**PDF Summarizer** is a production-shaped retrieval-augmented generation (RAG) service that summarizes PDF documents end-to-end without a single paid API call. An upload is durably stored (S3-compatible storage via LocalStack) before any processing happens, then extracted, chunked, and embedded locally via `sentence-transformers`, indexed in FAISS for semantic retrieval, and summarized by a self-hosted LLM served through [Ollama](https://ollama.com) — free to run, private by default, and portable to any environment with a CPU or GPU. Every retrieval and generation call is governed: audited to a local store, rate-limited per session, and surfaced on a dedicated Cost Dashboard alongside illustrative per-call cost estimates. The service is packaged as a multi-stage, non-root Docker image and validated through a GitHub Actions CI pipeline.
 
 ## Features
 
-- **PDF Reading**: Extracts text from PDF documents.
-- **Local Retrieval**: Chunks and embeds text locally (`sentence-transformers`) and indexes it with FAISS.
-- **Local Summarization**: Uses a self-hosted LLM via Ollama to generate summaries — no data leaves your machine.
-- **Interactive UI**: Provides a web-based interface with Streamlit for easy interaction.
-- **Containerized**: Ships with a multi-stage, non-root Dockerfile.
+- **Durable storage first**: uploads are written to S3-compatible storage (LocalStack) before processing — if storage fails, the request fails closed rather than silently processing an unpersisted file.
+- **Local retrieval**: chunks and embeds text locally (`sentence-transformers`) and indexes it with FAISS.
+- **Local summarization**: uses a self-hosted LLM via Ollama to generate structured summaries — no data leaves your machine.
+- **Governance**: every retrieval and generation call is audited (SQLite), with enforced policies (query length limits, per-session rate limiting).
+- **Cost Dashboard**: a dedicated page showing token usage, illustrative cost estimates, and the full audit trail.
+- **Interactive UI**: staged pipeline visibility, model/detail-level controls, streaming output, and a pre-flight health check.
+- **Containerized**: ships with a multi-stage, non-root Dockerfile.
 
 ## Getting Started
 
@@ -19,6 +21,7 @@ The **PDF Summarizer** project is an application designed to read PDF files and 
 - Python 3.12 or higher
 - Pip (Python package installer)
 - [Ollama](https://ollama.com) installed and running, with a model pulled (default: `llama3.2:1b`)
+- A LocalStack (or other S3-compatible) endpoint reachable — storage is a hard dependency, not optional: uploads are stored before processing, and the request fails if storage is unreachable
 
 ### Installation
 
@@ -51,11 +54,15 @@ The **PDF Summarizer** project is an application designed to read PDF files and 
 
 5. **Configure environment variables (optional):**
 
-    The app talks to Ollama over `OLLAMA_URL` (default `http://localhost:11434`) and uses `OLLAMA_MODEL` (default `llama3.2:1b`). Override either in a `.env` file if needed:
+    The app talks to Ollama over `OLLAMA_URL` (default `http://localhost:11434`) and uses `OLLAMA_MODEL` (default `llama3.2:1b`), and to S3-compatible storage over `AWS_ENDPOINT_URL` (default `http://localhost:4566`, LocalStack's default port). Override any of these in a `.env` file if needed:
 
     ```plaintext
     OLLAMA_URL=http://localhost:11434
     OLLAMA_MODEL=llama3.2:1b
+    AWS_ENDPOINT_URL=http://localhost:4566
+    AWS_ACCESS_KEY_ID=test
+    AWS_SECRET_ACCESS_KEY=test
+    S3_BUCKET_NAME=pdf-summarizer-documents
     ```
 
 ### Usage
@@ -79,22 +86,31 @@ docker build -t pdf-summarizer:local .
 docker run -p 8501:8501 \
   -e OLLAMA_URL=http://host.docker.internal:11434 \
   -e OLLAMA_MODEL=llama3.2:1b \
+  -e AWS_ENDPOINT_URL=http://host.docker.internal:4566 \
   pdf-summarizer:local
 ```
 
-`host.docker.internal` lets the container reach an Ollama instance running on your host machine. The image runs as a non-root user and exposes a health endpoint at `/_stcore/health`.
+`host.docker.internal` lets the container reach Ollama and LocalStack running on your host machine (or reachable via a `kubectl port-forward`, if you're pointing at a platform-hosted LocalStack). The image runs as a non-root user and exposes a health endpoint at `/_stcore/health`.
 
 ### Project Structure
 
 - `data/`: Contains raw and processed PDF files.
 - `docs/`: Documentation related to the project.
-- `src/`: Source code for PDF reading, text processing, summarization, and the Streamlit app.
+- `src/`: Source code.
+  - `pdf_reader.py`, `text_processor.py`, `openai_client.py` (Ollama-backed), `summarizer.py`: the RAG pipeline.
+  - `storage.py`: durable PDF storage (S3/LocalStack), written before processing.
+  - `governance.py`: audit logging and policy enforcement for retrieval and generation.
+  - `health.py`, `prompts.py`, `config.py`, `exceptions.py`: supporting modules.
+  - `streamlit_app.py`: the main UI.
+  - `pages/`: additional Streamlit pages (Cost Dashboard).
 - `test/`: Unit tests.
 - `deploy/environments/`: Per-environment (`dev`/`qa`/`prod`) configuration values, consumed by an external deployment chart.
 - `.github/workflows/`: CI pipeline (lint + test).
+- `.streamlit/config.toml`: Streamlit server config (upload size limit).
 - `Dockerfile`: Multi-stage, non-root container image.
 - `.gitignore`: Specifies files and directories to ignore in Git.
 - `requirements.txt`: Pinned Python package dependencies.
+- `LICENSE`: MIT License.
 - `README.md`: This file.
 
 ## Testing

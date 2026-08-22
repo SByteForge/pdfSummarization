@@ -1,3 +1,4 @@
+import io
 import logging
 import time
 import uuid
@@ -6,11 +7,12 @@ import streamlit as st
 
 from src import governance
 from src.config import Config
-from src.exceptions import PDFExtractionError, SummarizationError
+from src.exceptions import PDFExtractionError, StorageError, SummarizationError
 from src.health import check_ollama
 from src.openai_client import OpenAIClient
 from src.pdf_reader import PDFReader
 from src.prompts import DEFAULT_LEVEL, PROMPTS
+from src.storage import PDFStorage
 from src.text_processor import TextProcessor
 
 logging.basicConfig(level=logging.DEBUG if Config.DEBUG_MODE else logging.INFO)
@@ -53,12 +55,23 @@ def render_sidebar(health: dict) -> tuple[str, str]:
 
 
 def render_pipeline(pdf, model: str, query: str, session_id: str):
-    """Run the pipeline with visible stages, logging retrieval and generation for governance."""
+    """Run the pipeline with visible stages, logging retrieval and generation for governance.
+
+    The upload is stored durably (S3/LocalStack) before any processing —
+    fail-closed: if storage fails, the pipeline stops here.
+    """
     timings = {}
-    status = st.status("Extracting text from PDF...", expanded=True)
+    status = st.status("Storing document...", expanded=True)
+
+    data = pdf.read()
+    filename = getattr(pdf, "name", "upload.pdf")
+    t0 = time.perf_counter()
+    PDFStorage.store(data, filename)
+    timings["store"] = time.perf_counter() - t0
+    status.update(label="Extracting text from PDF...")
 
     t0 = time.perf_counter()
-    text = PDFReader.read_pdf(pdf)
+    text = PDFReader.read_pdf(io.BytesIO(data))
     timings["extract"] = time.perf_counter() - t0
     status.update(label="Embedding and indexing chunks...")
 
@@ -97,11 +110,12 @@ def render_pipeline(pdf, model: str, query: str, session_id: str):
 
 def render_pipeline_details(documents, timings: dict):
     with st.expander("How this summary was generated"):
-        cols = st.columns(4)
-        cols[0].metric("Extract", f"{timings['extract']:.2f}s")
-        cols[1].metric("Embed + index", f"{timings['embed']:.2f}s")
-        cols[2].metric("Retrieve", f"{timings['retrieve']:.2f}s")
-        cols[3].metric("Generate", f"{timings['generate']:.2f}s")
+        cols = st.columns(5)
+        cols[0].metric("Store", f"{timings['store']:.2f}s")
+        cols[1].metric("Extract", f"{timings['extract']:.2f}s")
+        cols[2].metric("Embed + index", f"{timings['embed']:.2f}s")
+        cols[3].metric("Retrieve", f"{timings['retrieve']:.2f}s")
+        cols[4].metric("Generate", f"{timings['generate']:.2f}s")
 
         st.caption(f"{len(documents)} chunk(s) retrieved and sent to the model:")
         for i, doc in enumerate(documents, start=1):
@@ -142,6 +156,9 @@ def main():
             st.subheader("Summary of file:")
             st.write(summary)
             render_pipeline_details(documents, timings)
+        except StorageError as e:
+            logger.warning("PDF storage failed: %s", e)
+            st.error(f"Couldn't store this upload: {e}. Check that LocalStack is running.")
         except PDFExtractionError as e:
             logger.warning("PDF extraction failed: %s", e)
             st.error(f"Couldn't read this PDF: {e}")
