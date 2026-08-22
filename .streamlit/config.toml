@@ -1,0 +1,14 @@
+# Streamlit server configuration.
+#
+# maxUploadSize is deliberately set well below Streamlit's 200MB default.
+# This app loads the entire PDF into memory (extraction, chunking, and
+# embedding all happen in-process, per request, with no streaming ingestion)
+# -- a much larger limit would let a single upload exhaust the container's
+# memory. 50MB comfortably covers realistic text-based PDFs. Handling
+# genuinely large files properly would mean a different upload path
+# entirely (e.g. direct-to-S3 presigned uploads, processed out-of-band),
+# not just raising this number.
+#
+# Override at runtime with the STREAMLIT_SERVER_MAX_UPLOAD_SIZE env var.
+[server]
+maxUploadSize = 50
